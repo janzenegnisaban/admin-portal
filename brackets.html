@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brackets — KaliArena Organizer</title>
+  <link rel="icon" href="logo.png">
+  <link rel="stylesheet" href="css/app.css">
+  <style>
+    .bk-workspace { display:flex; gap:1.25rem; min-height:32rem; }
+    .bk-pool { width:13rem; flex-shrink:0; display:flex; flex-direction:column; gap:.625rem; }
+    .bk-pool-card { border:1px solid var(--border); border-radius:.875rem; background:var(--card); padding:1rem; display:flex; flex-direction:column; gap:.625rem; flex:1; min-height:0; }
+    .bk-pool-label { font-weight:600; font-size:.8125rem; display:flex; align-items:center; justify-content:space-between; }
+    .bk-pool-teams { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:.3125rem; }
+    .team-card { display:flex; align-items:center; gap:.5rem; padding:.4375rem .625rem; border-radius:.625rem; border:1px solid var(--border); background:var(--card); font-size:.8125rem; font-weight:500; cursor:grab; user-select:none; transition:box-shadow .15s,opacity .15s,border-color .15s; }
+    .team-card:active { cursor:grabbing; }
+    .team-card:hover { box-shadow:0 2px 8px oklch(0 0 0/.07); border-color:var(--ring); }
+    .team-card.dragging { opacity:.3; }
+    .tc-avatar { width:1.5rem; height:1.5rem; border-radius:50%; background:var(--primary); color:var(--primary-foreground); display:flex; align-items:center; justify-content:center; font-size:.5625rem; font-weight:700; flex-shrink:0; }
+    .tc-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .bk-main { flex:1; min-width:0; display:flex; flex-direction:column; gap:.75rem; }
+    .bk-toolbar { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+    .bk-canvas { flex:1; overflow:auto; border:1px solid var(--border); border-radius:.875rem; background:var(--card); padding:1.25rem 1rem; min-height:18rem; }
+    .bracket-rounds { display:flex; align-items:stretch; min-width:max-content; }
+    .bracket-col { display:flex; flex-direction:column; min-width:11rem; padding:0 .875rem; }
+    .bracket-col-header { text-align:center; font-size:.6875rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted-foreground); padding-bottom:.75rem; white-space:nowrap; }
+    .bracket-col-matches { flex:1; display:flex; flex-direction:column; }
+    .bk-match-wrapper { flex:1; display:flex; align-items:center; padding:.3125rem 0; position:relative; }
+    .bk-match-wrapper.pair-top::after { content:''; position:absolute; right:-.875rem; top:50%; width:.875rem; height:50%; border-top:1.5px solid var(--border); border-right:1.5px solid var(--border); }
+    .bk-match-wrapper.pair-bot::after { content:''; position:absolute; right:-.875rem; top:0; width:.875rem; height:50%; border-bottom:1.5px solid var(--border); border-right:1.5px solid var(--border); }
+    .bracket-col:not(:first-child) .bk-match-wrapper:not(.no-lc)::before { content:''; position:absolute; left:-.875rem; top:50%; width:.875rem; border-top:1.5px solid var(--border); }
+    .bk-match { flex:1; border:1px solid var(--border); border-radius:.625rem; background:var(--background); overflow:hidden; }
+    .bk-slot { display:flex; align-items:center; gap:.5rem; padding:.5rem .625rem; font-size:.8125rem; min-height:2.375rem; border-bottom:1px solid var(--border); transition:background .15s; }
+    .bk-slot:last-child { border-bottom:none; }
+    .bk-slot.empty-s { color:var(--muted-foreground); font-style:italic; }
+    .bk-slot.bye-s { background:var(--muted); color:var(--muted-foreground); font-style:italic; }
+    .bk-slot.winner-s { background:oklch(0.95 0.06 140/.55); color:oklch(0.28 0.1 140); font-weight:600; }
+    .bk-slot.drop-z { border:1.5px dashed var(--primary); background:oklch(0.93 0.08 25/.07); }
+    .bk-slot.drop-over { background:oklch(0.9 0.12 25/.15); }
+    .bk-slot.clickable { cursor:pointer; }
+    .bk-slot.clickable:hover { background:oklch(0.93 0.08 25/.1); }
+    .slot-av { width:1.25rem; height:1.25rem; border-radius:50%; background:var(--primary); color:var(--primary-foreground); display:flex; align-items:center; justify-content:center; font-size:.5rem; font-weight:700; flex-shrink:0; }
+    .slot-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .champion-box { flex:1; border:2px solid oklch(0.72 0.14 78); border-radius:.75rem; background:oklch(0.98 0.025 78); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:1.25rem .75rem; text-align:center; gap:.375rem; }
+    .champion-label { font-size:.6875rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:oklch(0.55 0.1 78); }
+    .champion-name { font-size:1rem; font-weight:700; }
+    .pool-done { text-align:center; color:var(--muted-foreground); font-size:.8125rem; padding:1rem 0; display:flex; flex-direction:column; align-items:center; gap:.375rem; }
+    @media(max-width:900px) { .bk-workspace { flex-direction:column; } .bk-pool { width:100%; } .bk-pool-card { max-height:11rem; } }
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="loading-overlay"><div class="spinner"></div></div>
+
+  <div class="app-shell hidden" id="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-logo"><img src="logo.png" alt="KaliArena" style="height:2rem;width:auto;object-fit:contain;flex-shrink:0;"><span class="sidebar-logo-text">KaliArena</span></div>
+      <div class="sidebar-badge-area" id="sidebar-badge"></div>
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+    </aside>
+
+    <div class="main-content">
+      <header class="portal-header">
+        <div class="header-left"><div class="header-title">Brackets</div></div>
+        <div class="header-right">
+          <span class="header-user-name" id="header-user-name"></span>
+          <div class="header-avatar" id="header-avatar">?</div>
+        </div>
+      </header>
+
+      <main class="page-content">
+        <div class="page-wrap">
+          <div class="page-header">
+            <div class="page-header-text">
+              <h1 class="page-title">Bracket Generator</h1>
+              <p class="page-subtitle">Seed teams and manage the tournament bracket for your events.</p>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:1.25rem;">
+            <div class="card-content" style="padding:1rem 1.25rem;">
+              <div style="display:flex;align-items:center;gap:.875rem;flex-wrap:wrap;">
+                <label class="form-label" style="margin:0;white-space:nowrap;font-size:.875rem;">Select Event</label>
+                <select class="form-input" id="event-select" style="flex:1;min-width:14rem;" onchange="onEventChange()">
+                  <option value="">— choose an approved event —</option>
+                </select>
+                <span id="event-reg-count" style="font-size:.8125rem;color:var(--muted-foreground);white-space:nowrap;"></span>
+              </div>
+            </div>
+          </div>
+
+          <div id="no-event-state">
+            <div class="empty-state">
+              <i data-lucide="git-branch"></i>
+              <h3>No event selected</h3>
+              <p>Choose an approved event above to manage its bracket.</p>
+            </div>
+          </div>
+
+          <div id="bracket-workspace" style="display:none;">
+            <div class="bk-workspace">
+              <div class="bk-pool">
+                <div class="bk-pool-card">
+                  <div class="bk-pool-label">
+                    <span>Unseeded Teams</span>
+                    <span id="pool-count" class="badge badge-gray" style="font-size:.7rem;"></span>
+                  </div>
+                  <div class="bk-pool-teams" id="team-pool"></div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="autoSeed()" style="width:100%;">
+                  <i data-lucide="shuffle"></i> Auto-seed All
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="resetBracket()" style="width:100%;">
+                  <i data-lucide="rotate-ccw"></i> Reset Bracket
+                </button>
+              </div>
+
+              <div class="bk-main">
+                <div class="bk-toolbar">
+                  <div id="mode-indicator" style="font-size:.8125rem;"></div>
+                  <div style="flex:1;"></div>
+                  <button class="btn btn-primary btn-sm" id="save-btn" onclick="saveBracket()">
+                    <i data-lucide="save"></i>
+                    <span id="save-btn-label">Save & Publish</span>
+                  </button>
+                </div>
+                <div class="bk-canvas" id="bracket-canvas">
+                  <div class="text-sm text-muted">Loading…</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+      <nav class="mobile-nav" id="mobile-nav"></nav>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    const PAGE = 'brackets.html';
+    const LOAD_ALL_EVENTS = false; // organizer sees only own approved events
+
+    let userId, currentEvent = null;
+    let allEvents = [], registeredTeams = [], poolTeams = [];
+    let bracket = [], totalRounds = 0, draggedTeam = null;
+
+    // ── Init ──────────────────────────────────────────────────────
+    async function init() {
+      const ctx = await requireRole();
+      if (!ctx) return;
+      userId = ctx.session.user.id;
+      renderNav(PAGE);
+      setHeaderUser(ctx.profile);
+      await loadEvents();
+      showApp();
+      refreshIcons();
+    }
+
+    async function loadEvents() {
+      let q = window.db.from('competitions')
+        .select('id,name,status,admin_approval_status')
+        .eq('admin_approval_status','approved')
+        .order('start_date',{ascending:false});
+      if (!LOAD_ALL_EVENTS) q = q.eq('organizer_id', userId);
+      const { data } = await q;
+      allEvents = data || [];
+      const sel = document.getElementById('event-select');
+      sel.innerHTML = '<option value="">— choose an approved event —</option>' +
+        allEvents.map(e => `<option value="${e.id}">${escHtml(e.name)} (${capitalize(e.status||'')})</option>`).join('');
+    }
+
+    async function onEventChange() {
+      const evId = document.getElementById('event-select').value;
+      if (!evId) {
+        document.getElementById('no-event-state').style.display = '';
+        document.getElementById('bracket-workspace').style.display = 'none';
+        document.getElementById('event-reg-count').textContent = '';
+        currentEvent = null;
+        return;
+      }
+      currentEvent = allEvents.find(e => e.id === evId);
+      document.getElementById('no-event-state').style.display = 'none';
+      document.getElementById('bracket-workspace').style.display = '';
+      document.getElementById('bracket-canvas').innerHTML = '<div class="text-sm text-muted" style="padding:.5rem;">Loading…</div>';
+      await loadBracketForEvent(evId);
+    }
+
+    async function loadBracketForEvent(evId) {
+      const { data: regs } = await window.db
+        .from('competition_registrations')
+        .select('coach_id')
+        .eq('competition_id', evId)
+        .eq('status', 'approved');
+
+      const coachIds = (regs || []).map(r => r.coach_id).filter(Boolean);
+
+      if (coachIds.length > 0) {
+        const [profRes, teamRes] = await Promise.all([
+          window.db.from('profiles').select('id,first_name,last_name').in('id', coachIds),
+          window.db.from('teams').select('coach_id,name').in('coach_id', coachIds),
+        ]);
+        const profiles = profRes.data || [];
+        const teams    = teamRes.data || [];
+        registeredTeams = coachIds.map(coachId => {
+          const p = profiles.find(x => x.id === coachId);
+          const t = teams.find(x => x.coach_id === coachId);
+          const name = t?.name || (p ? `${p.first_name||''} ${p.last_name||''}`.trim() : null) || coachId.slice(0,8);
+          return { name, coachId };
+        });
+      } else {
+        registeredTeams = [];
+      }
+
+      const n = registeredTeams.length;
+      document.getElementById('event-reg-count').textContent = `${n} approved team${n!==1?'s':''}`;
+
+      const { data: rows } = await window.db
+        .from('brackets')
+        .select('round,match_order,player1_id,player1_name,player2_id,player2_name,winner_id,winner_name')
+        .eq('competition_id', evId)
+        .order('round').order('match_order');
+
+      if (rows && rows.length > 0) rebuildFromDB(rows);
+      else initEmptyBracket();
+    }
+
+    // ── Bracket structure ─────────────────────────────────────────
+    function buildStructure(n) {
+      totalRounds = Math.ceil(Math.log2(n));
+      const slots = Math.pow(2, totalRounds);
+      bracket = [];
+      for (let r = 0; r < totalRounds; r++) {
+        const mc = slots / Math.pow(2, r + 1);
+        bracket.push(Array.from({length: mc}, () => ({p1:null, p2:null, winner:null})));
+      }
+    }
+
+    function initEmptyBracket() {
+      const n = registeredTeams.length;
+      if (n < 2) { showNotEnough(); return; }
+      buildStructure(n);
+      poolTeams = [...registeredTeams];
+      renderPool();
+      renderBracket();
+    }
+
+    function rebuildFromDB(rows) {
+      const n = registeredTeams.length;
+      if (n < 2) { showNotEnough(); return; }
+      buildStructure(n);
+      for (const row of rows) {
+        const r = row.round - 1, m = row.match_order - 1;
+        if (r < 0 || r >= bracket.length || m < 0 || m >= bracket[r].length) continue;
+        bracket[r][m] = {
+          p1:     row.player1_name ? {name:row.player1_name, coachId:row.player1_id} : null,
+          p2:     row.player2_name ? {name:row.player2_name, coachId:row.player2_id} : null,
+          winner: row.winner_name  ? {name:row.winner_name,  coachId:row.winner_id}  : null,
+        };
+      }
+      const placed = new Set();
+      for (const m of (bracket[0]||[])) {
+        if (m.p1?.coachId) placed.add(m.p1.coachId);
+        if (m.p2?.coachId) placed.add(m.p2.coachId);
+      }
+      poolTeams = registeredTeams.filter(t => !placed.has(t.coachId));
+      renderPool();
+      renderBracket();
+    }
+
+    function showNotEnough() {
+      document.getElementById('bracket-canvas').innerHTML = `
+        <div class="empty-state" style="padding:2rem 1rem;">
+          <i data-lucide="users"></i>
+          <h3>Not enough teams</h3>
+          <p>At least 2 approved registrations are needed.</p>
+        </div>`;
+      document.getElementById('team-pool').innerHTML = '';
+      document.getElementById('pool-count').textContent = '0';
+      refreshIcons();
+    }
+
+    // ── Pool ──────────────────────────────────────────────────────
+    function renderPool() {
+      const el = document.getElementById('team-pool');
+      document.getElementById('pool-count').textContent = poolTeams.length;
+      if (poolTeams.length === 0) {
+        el.innerHTML = `<div class="pool-done"><i data-lucide="check-circle-2" style="width:1.25rem;height:1.25rem;opacity:.5;"></i>All teams seeded</div>`;
+        refreshIcons(); return;
+      }
+      el.innerHTML = poolTeams.map((t, i) => `
+        <div class="team-card" draggable="true" ondragstart="onTeamDragStart(event,${i})" ondragend="onTeamDragEnd(event)">
+          <div class="tc-avatar">${getInitials(t.name)}</div>
+          <span class="tc-name" title="${escHtml(t.name)}">${escHtml(t.name)}</span>
+          <i data-lucide="grip-vertical" style="width:.875rem;height:.875rem;opacity:.3;flex-shrink:0;"></i>
+        </div>`).join('');
+      refreshIcons();
+    }
+
+    // ── Bracket render ────────────────────────────────────────────
+    function getMode() {
+      if (!bracket.length) return 'seeding';
+      const hasEmpty = bracket[0].some(m => !m.p1 || !m.p2) || poolTeams.length > 0;
+      if (hasEmpty) return 'seeding';
+      if (bracket[totalRounds-1]?.[0]?.winner) return 'done';
+      return 'advancing';
+    }
+
+    function roundLabel(r) {
+      const rem = totalRounds - r;
+      if (rem===1) return 'Final';
+      if (rem===2) return 'Semifinal';
+      if (rem===3) return 'Quarterfinal';
+      return `Round ${r+1}`;
+    }
+
+    function renderBracket() {
+      const mode = getMode();
+      updateModeIndicator(mode);
+      const canvas = document.getElementById('bracket-canvas');
+      if (!bracket.length) return;
+
+      let html = '<div class="bracket-rounds">';
+      for (let r = 0; r < totalRounds; r++) {
+        html += `<div class="bracket-col"><div class="bracket-col-header">${roundLabel(r)}</div><div class="bracket-col-matches">`;
+        for (let m = 0; m < bracket[r].length; m++) {
+          const pc = r < totalRounds-1 ? (m%2===0 ? 'pair-top' : 'pair-bot') : '';
+          html += `<div class="bk-match-wrapper ${pc}"><div class="bk-match">
+            ${renderSlot(bracket[r][m].p1,'p1',r,m,bracket[r][m].winner,mode)}
+            ${renderSlot(bracket[r][m].p2,'p2',r,m,bracket[r][m].winner,mode)}
+          </div></div>`;
+        }
+        html += '</div></div>';
+      }
+
+      const fin = bracket[totalRounds-1]?.[0];
+      if (fin?.winner) {
+        html += `<div class="bracket-col"><div class="bracket-col-header">Champion</div>
+          <div class="bracket-col-matches"><div class="bk-match-wrapper no-lc">
+            <div class="champion-box">
+              <i data-lucide="crown" style="width:1.75rem;height:1.75rem;color:oklch(0.72 0.14 78);"></i>
+              <div class="champion-label">Champion</div>
+              <div class="champion-name">${escHtml(fin.winner.name)}</div>
+            </div>
+          </div></div></div>`;
+      }
+      html += '</div>';
+      canvas.innerHTML = html;
+      refreshIcons();
+
+      if (mode === 'seeding') {
+        canvas.querySelectorAll('.bk-slot[data-ds]').forEach(el => {
+          el.addEventListener('dragover',  e => { e.preventDefault(); el.classList.add('drop-over'); });
+          el.addEventListener('dragleave', () => el.classList.remove('drop-over'));
+          el.addEventListener('drop',      e => { e.preventDefault(); el.classList.remove('drop-over'); onSlotDrop(el); });
+        });
+      }
+    }
+
+    function renderSlot(participant, slotKey, r, m, winner, mode) {
+      const isBye    = participant?.name === 'BYE';
+      const isEmpty  = participant === null;
+      const isWinner = !isEmpty && !isBye && winner &&
+        (winner.coachId === participant.coachId || winner.name === participant.name);
+      let cls = 'bk-slot';
+      if (isEmpty)  cls += ' empty-s';
+      if (isBye)    cls += ' bye-s';
+      if (isWinner) cls += ' winner-s';
+      const droppable = mode==='seeding' && r===0 && !isBye;
+      if (droppable)  cls += ' drop-z';
+      const clickable = mode==='advancing' && !isEmpty && !isBye && !winner;
+      if (clickable)  cls += ' clickable';
+      const da = droppable ? `data-ds="1" data-r="${r}" data-m="${m}" data-slot="${slotKey}"` : '';
+      const ca = clickable ? `onclick="selectWinner(${r},${m},'${slotKey}')"` : '';
+      let inner = '';
+      if (isEmpty) {
+        inner = `<span class="slot-name" style="opacity:.4;">${droppable?'Drop team here…':'TBD'}</span>`;
+      } else if (isBye) {
+        inner = `<span class="slot-name">— BYE —</span>`;
+      } else {
+        inner = `<div class="slot-av">${getInitials(participant.name)}</div>
+          <span class="slot-name" title="${escHtml(participant.name)}">${escHtml(participant.name)}</span>
+          ${isWinner?`<i data-lucide="crown" style="width:.75rem;height:.75rem;color:oklch(0.6 0.14 78);flex-shrink:0;"></i>`:''}`;
+      }
+      return `<div class="${cls}" ${da} ${ca}>${inner}</div>`;
+    }
+
+    function updateModeIndicator(mode) {
+      const el = document.getElementById('mode-indicator');
+      const map = {
+        seeding:   ['badge-blue',    'mouse-pointer-2', 'Seeding — drag teams from the left panel into Round 1 slots'],
+        advancing: ['badge-emerald', 'play-circle',     'Advancing — click a team in each match to mark as winner'],
+        done:      ['badge-amber',   'trophy',          'Tournament complete'],
+      };
+      const [cls,icon,text] = map[mode];
+      el.innerHTML = `<span class="badge ${cls}"><i data-lucide="${icon}" style="width:.7rem;height:.7rem;"></i> ${text}</span>`;
+      refreshIcons();
+    }
+
+    // ── Drag & Drop ───────────────────────────────────────────────
+    function onTeamDragStart(event, idx) {
+      draggedTeam = poolTeams[idx];
+      event.dataTransfer.effectAllowed = 'move';
+      event.target.classList.add('dragging');
+    }
+    function onTeamDragEnd(event) {
+      event.target?.classList.remove('dragging');
+      draggedTeam = null;
+    }
+    function onSlotDrop(slotEl) {
+      if (!draggedTeam) return;
+      const r = +slotEl.dataset.r, m = +slotEl.dataset.m, slot = slotEl.dataset.slot;
+      const match = bracket[r][m];
+      const displaced = match[slot];
+      match[slot] = { name: draggedTeam.name, coachId: draggedTeam.coachId };
+      poolTeams = poolTeams.filter(t => t !== draggedTeam);
+      if (displaced && displaced.name !== 'BYE') poolTeams.push(displaced);
+      draggedTeam = null;
+      renderPool();
+      renderBracket();
+    }
+
+    // ── Auto-seed ─────────────────────────────────────────────────
+    function autoSeed() {
+      const n = registeredTeams.length;
+      if (n < 2) return;
+      buildStructure(n);
+      const slots = Math.pow(2, totalRounds);
+      const shuffled = [...registeredTeams].sort(() => Math.random() - 0.5);
+      const seeded = [...shuffled, ...Array.from({length: slots-n}, () => ({name:'BYE', coachId:null}))];
+      for (let i = 0; i < seeded.length; i += 2) {
+        const mi = Math.floor(i/2);
+        bracket[0][mi].p1 = seeded[i];
+        bracket[0][mi].p2 = seeded[i+1];
+      }
+      autoAdvanceByes(0);
+      poolTeams = [];
+      renderPool();
+      renderBracket();
+    }
+
+    function autoAdvanceByes(startR) {
+      for (let r = startR; r < totalRounds-1; r++) {
+        for (let m = 0; m < bracket[r].length; m++) {
+          const match = bracket[r][m];
+          if (!match.p1 || !match.p2) continue;
+          const p1Bye = match.p1.name === 'BYE';
+          const p2Bye = match.p2.name === 'BYE';
+          let winner = null;
+          if (p1Bye && !p2Bye) winner = match.p2;
+          else if (p2Bye && !p1Bye) winner = match.p1;
+          if (winner) { match.winner = winner; placeInNextRound(r, m, winner); }
+        }
+      }
+    }
+
+    function placeInNextRound(r, m, team) {
+      const nr = r+1, nm = Math.floor(m/2), ns = m%2===0 ? 'p1' : 'p2';
+      if (nr >= bracket.length || nm >= bracket[nr].length) return;
+      bracket[nr][nm][ns] = team;
+      const other = ns==='p1' ? bracket[nr][nm].p2 : bracket[nr][nm].p1;
+      if (other?.name === 'BYE') { bracket[nr][nm].winner = team; if (nr < totalRounds-1) placeInNextRound(nr, nm, team); }
+    }
+
+    // ── Winner selection ──────────────────────────────────────────
+    function selectWinner(r, m, slotKey) {
+      const match = bracket[r][m];
+      const winner = match[slotKey];
+      if (!winner || winner.name === 'BYE') return;
+      if (match.winner) clearWinnerChain(r, m);
+      match.winner = winner;
+      placeInNextRound(r, m, winner);
+      renderPool();
+      renderBracket();
+    }
+
+    function clearWinnerChain(r, m) {
+      const old = bracket[r][m].winner;
+      if (!old) return;
+      const nr = r+1, nm = Math.floor(m/2), ns = m%2===0 ? 'p1' : 'p2';
+      if (nr >= bracket.length || nm >= bracket[nr].length) return;
+      const nx = bracket[nr][nm];
+      if (nx[ns]?.name === old.name) {
+        nx[ns] = null;
+        if (nx.winner?.name === old.name) { nx.winner = null; clearWinnerChain(nr, nm); }
+      }
+    }
+
+    // ── Reset ─────────────────────────────────────────────────────
+    function resetBracket() {
+      if (!confirmAction('Reset bracket? All seeding and results will be cleared.')) return;
+      initEmptyBracket();
+    }
+
+    // ── Save & Publish ────────────────────────────────────────────
+    async function saveBracket() {
+      if (!currentEvent) return;
+      const btn = document.getElementById('save-btn');
+      const lbl = document.getElementById('save-btn-label');
+      btn.disabled = true; lbl.textContent = 'Saving…';
+
+      const { error: delErr } = await window.db.from('brackets').delete().eq('competition_id', currentEvent.id);
+      if (delErr) { showToast('Clear failed: ' + delErr.message, 'error'); btn.disabled=false; lbl.textContent='Save & Publish'; return; }
+
+      const rows = [];
+      for (let r = 0; r < bracket.length; r++) {
+        for (let m = 0; m < bracket[r].length; m++) {
+          const x = bracket[r][m];
+          rows.push({
+            competition_id: currentEvent.id,
+            round:          r+1,
+            match_order:    m+1,
+            player1_id:     x.p1?.coachId    || null,
+            player1_name:   x.p1?.name       || null,
+            player2_id:     x.p2?.coachId    || null,
+            player2_name:   x.p2?.name       || null,
+            winner_id:      x.winner?.coachId || null,
+            winner_name:    x.winner?.name    || null,
+            status:         x.winner ? 'completed' : 'pending',
+          });
+        }
+      }
+      const { error } = await window.db.from('brackets').insert(rows);
+      btn.disabled = false; lbl.textContent = 'Save & Publish';
+      if (error) { showToast('Save failed: ' + error.message, 'error'); return; }
+      showToast('Bracket saved and published!', 'success');
+    }
+
+    init();
+  </script>
+</body>
+</html>

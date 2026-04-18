@@ -7,15 +7,16 @@ const NAV_ITEMS = [
   { label: 'Notifications', page: 'notifications.html', icon: 'bell' },
   { label: 'Teams & Players',page: 'teams.html',        icon: 'users-2' },
   { label: 'Events',        page: 'events.html',        icon: 'calendar-days' },
+  { label: 'Brackets',      page: 'brackets.html',      icon: 'git-branch' },
   { label: 'Rankings',      page: 'rankings.html',      icon: 'trophy' },
 ];
 
 const MOBILE_NAV = [
-  { label: 'Home',     page: 'dashboard.html',     icon: 'layout-dashboard' },
-  { label: 'Accounts', page: 'users.html',         icon: 'users' },
-  { label: 'Notify',   page: 'notifications.html', icon: 'bell' },
-  { label: 'Events',   page: 'events.html',        icon: 'calendar-days' },
-  { label: 'Rankings', page: 'rankings.html',      icon: 'trophy' },
+  { label: 'Home',     page: 'dashboard.html',  icon: 'layout-dashboard' },
+  { label: 'Accounts', page: 'users.html',      icon: 'users' },
+  { label: 'Events',   page: 'events.html',     icon: 'calendar-days' },
+  { label: 'Brackets', page: 'brackets.html',   icon: 'git-branch' },
+  { label: 'Rankings', page: 'rankings.html',   icon: 'trophy' },
 ];
 
 const ROLE_BADGE = `<span class="badge badge-red"><i data-lucide="shield" style="width:.75rem;height:.75rem;"></i> Admin</span>`;
@@ -30,7 +31,7 @@ function renderNav(currentPage) {
         <i data-lucide="${n.icon}"></i>${escHtml(n.label)}
       </a>
     `).join('') +
-    `<button onclick="signOut()" class="sidebar-nav-link" style="margin-top:.5rem;">
+    `<button onclick="showSignOutModal()" class="sidebar-nav-link" style="margin-top:.5rem;">
       <i data-lucide="log-out"></i>Sign out
     </button>`;
   }
